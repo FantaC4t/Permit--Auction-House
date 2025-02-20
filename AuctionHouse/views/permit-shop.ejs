@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Permit Shop</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div id="alert-box" class="alert hidden"></div>
+
+<style>
+  .alert {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px;
+    border-radius: 5px;
+    font-weight: bold;
+    display: none;
+    z-index: 1000;
+  }
+  .alert.success {
+    background-color: #4CAF50;
+    color: white;
+  }
+  .alert.error {
+    background-color: #f44336;
+    color: white;
+  }
+  .hidden {
+    display: none;
+  }
+</style>
+
+    <nav>
+        <div>
+            <a href="/">Shop</a>
+        </div>
+        <div>
+            <a href="/logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>Welcome to the Permit Shop, <%= user.username %>!</h1>
+        <h2>Your Coins: <%= user.coins %></h2>
+
+        <div class="invites">
+            <h2>Team Invites</h2>
+            <% if (invites.length > 0) { %>
+                <% invites.forEach(invite => { %>
+                    <div class="invite">
+                        <div class="invite-message">
+                            You've been invited by <%= invite.inviter_username %> for permit <%= invite.permit_name %>!
+                        </div>
+                        <div class="invite-buttons">
+                            <button onclick="respondInvite(<%= invite.invite_id %>, 'accept')">Accept</button>
+                            <button onclick="respondInvite(<%= invite.invite_id %>, 'reject')">Reject</button>
+                        </div>
+                    </div>
+                <% }); %>
+            <% } else { %>
+                <p>No invites yet.</p>
+            <% } %>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Permit Name</th>
+                    <th>Description</th>
+                    <th>Highest Bid</th>
+                    <th>Your Bid</th>
+                    <th>Bid</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% permits.forEach(permit => { %>
+                <tr>
+                    <td><%= permit.name %></td>
+                    <td><%= permit.description %></td>
+                    <td><%= permit.highest_bid || "No bids yet" %></td>
+                    <td><%= userBids[permit.id] || "No bid placed" %></td>
+                    <td>
+                        <input type="number" id="bid-<%= permit.id %>" placeholder="Enter your bid" required min="0">
+                        <button onclick="placeBid(<%= permit.id %>)">Place Bid</button>
+                    </td>
+                </tr>
+                <% }); %>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+function placeBid(permitId) {
+    const bidAmount = document.getElementById(`bid-${permitId}`).value;
+
+    if (!bidAmount || isNaN(bidAmount) || bidAmount <= 0) {
+        alert("❌ Please enter a valid bid amount!");
+        return;
+    }
+
+    fetch(`/bid/${permitId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `bid_amount=${bidAmount}`
+    }).then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+    });
+}
+        function respondInvite(inviteId, action) {
+            fetch(`/${action}_invite/${inviteId}`, { method: "POST" })
+                .then(() => location.reload());
+        }
+    </script>
+<script>
+    function showAlert(message, type) {
+        const alertBox = document.getElementById("alert-box");
+        alertBox.textContent = message;
+        alertBox.className = `alert ${type}`; // Set success/error class
+        alertBox.style.display = "block";
+  
+        setTimeout(() => {
+            alertBox.style.display = "none";
+        }, 3000); // Hide after 3 seconds
+    }
+  
+    // Check for messages in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const errorMessage = urlParams.get("error");
+    const successMessage = urlParams.get("success");
+  
+    if (errorMessage) showAlert(errorMessage, "error");
+    if (successMessage) showAlert(successMessage, "success");
+  
+    // Remove query params from URL after showing alert
+    if (errorMessage || successMessage) {
+        history.replaceState(null, "", window.location.pathname);
+    }
+  </script>
+  
+      
+</body>
+</html>
