@@ -3,9 +3,9 @@ const bodyParser = require("body-parser");
 const session = require("express-session");
 const mongoose = require("mongoose");
 const connectDB = require("./db");
-const bcrypt = require("bcrypt");
+const crypto = require('crypto');
 
-const User = require("./models/User");
+const User = require("./models/User"); // Ensure the correct path to the User model
 const Permit = require("./models/Permit");
 const Bid = require("./models/Bid");
 const Invite = require("./models/Invite");
@@ -44,12 +44,24 @@ app.get("/login", (req, res) => {
 // Handle Login
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-  const user = await User.findOne({ username });
+  console.log("Login attempt:", username, password); // Debugging statement
 
-  if (user && await bcrypt.compare(password, user.passwordHash)) {
-    req.session.user = user; // Store user in session
-    res.json({ success: true });
+  const user = await User.findOne({ username });
+  console.log("User found:", user); // Debugging statement
+
+  if (user) {
+    console.log("User password field:", user.password); // Debugging statement
+    console.log("Comparing passwords:", password, user.password); // Debugging statement
+    if (password === user.password) {
+      req.session.user = user; // Store user in session
+      console.log("Login successful"); // Debugging statement
+      res.json({ success: true });
+    } else {
+      console.log("Invalid Password."); // Debugging statement
+      res.status(401).json({ message: "Invalid Username or Password." });
+    }
   } else {
+    console.log("User not found."); // Debugging statement
     res.status(401).json({ message: "Invalid Username or Password." });
   }
 });
