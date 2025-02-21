@@ -38,13 +38,17 @@
         <h1>Bids for <%= permit.name %></h1>
         <p><%= permit.description %></p>
         <h2>Bids</h2>
-        <% bids.forEach(bid => { %>
-            <div class="bid">
-                <p>Bidder: <%= bid.bidder.username %></p>
-                <p>Amount: <%= bid.amount %></p>
-                <p>Time: <%= bid.bidTime.toLocaleString() %></p>
-            </div>
-        <% }) %>
+        <% if (bids.length > 0) { %>
+            <% bids.forEach(bid => { %>
+                <div class="bid">
+                    <p>Bidder: <%= bid.bidder.username %></p>
+                    <p>Amount: <%= bid.amount %></p>
+                    <p>Time: <%= bid.bidTime.toLocaleString() %></p>
+                </div>
+            <% }) %>
+        <% } else { %>
+            <p>No bids yet.</p>
+        <% } %>
         <a href="/">Back to Shop</a>
     </div>
 </body>

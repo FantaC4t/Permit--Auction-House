@@ -8,8 +8,7 @@ const bcrypt = require("bcrypt");
 const User = require("./models/User");
 const Permit = require("./models/Permit");
 const Bid = require("./models/Bid");
-const Invite = require("./models/Invite");
-const BidsTeam = require("./models/BidsTeam");
+const Invite = require("./models/Invite"); // Import the Invite model
 
 const app = express();
 app.set("view engine", "ejs");
@@ -87,39 +86,53 @@ app.post("/bid/:id", isAuthenticated, async (req, res) => {
   const user = req.session.user;
 
   if (!bidAmount || isNaN(bidAmount) || bidAmount <= 0) {
-    return res.redirect("/?error=Invalid%20bid%20amount");
+    return res.status(400).json({ error: "Invalid bid amount" });
   }
 
   if (bidAmount > user.coins) {
-    return res.redirect("/?error=Not%20enough%20coins");
+    return res.status(400).json({ error: "Not enough coins" });
   }
 
-  const permit = await Permit.findById(permitId);
+  const permit = await Permit.findById(permitId).populate('bids');
   if (!permit) {
-    return res.redirect("/?error=Permit%20not%20found");
+    return res.status(404).json({ error: "Permit not found" });
   }
 
-  if (bidAmount > permit.highest_bid) {
-    permit.highest_bid = bidAmount;
-    await permit.save();
+  const existingBids = await Bid.find({ permit: permitId, bidder: user._id }).sort({ amount: -1 });
 
-    user.coins -= bidAmount;
+  if (existingBids.length > 0) {
+    const highestBid = existingBids[0];
+    if (bidAmount <= highestBid.amount) {
+      return res.status(400).json({ error: "Your new bid must be higher than your previous highest bid" });
+    }
+
+    // Refund the highest bid amount
+    user.coins += highestBid.amount;
     await User.findByIdAndUpdate(user._id, { coins: user.coins });
-
-    const bid = new Bid({
-      permit: permitId,
-      bidder: user._id,
-      amount: bidAmount
-    });
-    await bid.save();
-
-    req.session.user.bids = { ...req.session.user.bids, [permitId]: bidAmount };
-    req.session.success = "Bid placed successfully!";
-    return res.redirect("/");
-  } else {
-    req.session.error = "Your bid must be higher than the current highest bid!";
-    return res.redirect("/");
   }
+
+  if (bidAmount <= permit.highest_bid) {
+    return res.status(400).json({ error: "Your new bid must be higher than the current highest bid" });
+  }
+
+  permit.highest_bid = bidAmount;
+
+  const bid = new Bid({
+    permit: permitId,
+    bidder: user._id,
+    amount: bidAmount
+  });
+  await bid.save();
+
+  permit.bids.push(bid._id);
+  await permit.save();
+
+  user.coins -= bidAmount;
+  await User.findByIdAndUpdate(user._id, { coins: user.coins });
+
+  req.session.user.bids = { ...req.session.user.bids, [permitId]: bidAmount };
+  req.session.success = "Bid placed successfully!";
+  return res.json({ success: "Bid placed successfully!", updatedCoins: user.coins });
 });
 
 app.use((req, res, next) => {
@@ -169,15 +182,11 @@ app.get("/permit/:id/bids", isAuthenticated, async (req, res) => {
   const permitId = req.params.id;
   const permit = await Permit.findById(permitId).populate('bids');
   if (!permit) {
-    return res.redirect("/?error=Permit%20not%20found");
+    return res.status(404).json({ error: "Permit not found" });
   }
 
   const bids = await Bid.find({ permit: permitId }).populate('bidder').sort({ bidTime: -1 });
-  res.render("permit-bids", {
-    user: req.session.user,
-    permit,
-    bids
-  });
+  res.json({ bids });
 });
 
 // Start Server

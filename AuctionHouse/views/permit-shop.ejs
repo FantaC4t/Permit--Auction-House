@@ -17,8 +17,12 @@
         }
         .alert.success { background-color: #4CAF50; color: white; }
         .alert.error { background-color: #f44336; color: white; }
-        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 10px; }
+        .modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 10px; z-index: 1001; }
         .modal-content { text-align: center; }
+        .modal-header { font-weight: bold; margin-bottom: 10px; }
+        .modal-close { cursor: pointer; color: red; font-weight: bold; }
+        .modal-close:hover { color: darkred; }
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.5); z-index: 1000; }
     </style>
 </head>
 <body>
@@ -31,7 +35,7 @@
         <h1>Welcome to the Permit Shop, <%= user.username || user.userId %>!</h1>
         <div id="alert-box" class="alert"></div>
         
-        <h2>Your Coins: <%= user.coins %></h2>
+        <h2>Your Coins: <span id="user-coins"><%= user.coins %></span></h2>
 
         <div class="invites">
             <h2>Team Invites</h2>
@@ -65,19 +69,18 @@
             </thead>
             <tbody>
                 <% permits.forEach(permit => { %>
-                <tr id="permit-<%= permit.id %>">
+                <tr id="permit-<%= permit._id %>">
                     <td><%= permit.name %></td>
                     <td><%= permit.description %></td>
-                    <td class="highest-bid"><%= permit.highest_bid || "No bids yet" %></td>
-                    <td><%= userBids[permit.id] || "No bid placed" %></td>
+                    <td class="highest-bid">
+                        <a href="#" onclick="showBidHistory('<%= permit._id %>')"><%= permit.highest_bid || "No bids yet" %></a>
+                    </td>
+                    <td><%= userBids[permit._id] || "No bid placed" %></td>
                     <td>
-                        <input type="number" id="bid-<%= permit.id %>" placeholder="Enter bid" required min="0">
-                        <button onclick="placeBid(<%= permit.id %>)">Bid</button>
-                        <input type="text" id="invite-user-<%= permit.id %>" placeholder="Username">
-                        <button onclick="openInviteModal(<%= permit.id %>)">Invite</button>
-                        <% if (userBids[permit.id] || permit.highest_bid === userBids[permit.id]) { %>
-                            <a href="/permit/<%= permit.id %>/bids">View All Bids</a>
-                        <% } %>
+                        <input type="number" id="bid-<%= permit._id %>" placeholder="Enter bid" required min="0">
+                        <button onclick="placeBid('<%= permit._id %>')">Bid</button>
+                        <input type="text" id="invite-user-<%= permit._id %>" placeholder="Username">
+                        <button onclick="openInviteModal('<%= permit._id %>')">Invite</button>
                     </td>
                 </tr>
                 <% }); %>
@@ -85,22 +88,24 @@
         </table>
     </div>
 
-    <div id="inviteModal" class="modal">
+    <div id="bidHistoryModal" class="modal">
         <div class="modal-content">
-            <h3>Confirm Invite</h3>
-            <p id="inviteDetails"></p>
-            <button onclick="sendInvite()">Confirm</button>
-            <button onclick="closeInviteModal()">Cancel</button>
+            <div class="modal-header">
+                Bid History
+                <span class="modal-close" onclick="closeBidHistoryModal()">×</span>
+            </div>
+            <div id="bidHistoryContent"></div>
         </div>
     </div>
+    <div id="overlay" class="overlay" onclick="closeBidHistoryModal()"></div>
 
     <script>
         function placeBid(permitId) {
             const bidAmount = parseFloat(document.getElementById(`bid-${permitId}`).value);
-            const highestBidElement = document.querySelector(`#permit-${permitId} .highest-bid`);
+            const highestBidElement = document.querySelector(`#permit-${permitId} .highest-bid a`);
             const highestBid = highestBidElement && highestBidElement.textContent !== "No bids yet" ? parseFloat(highestBidElement.textContent) : 0;
-            const userCoinsElement = document.querySelector('h2');
-            const userCoins = parseFloat(userCoinsElement.textContent.replace('Your Coins: ', ''));
+            const userCoinsElement = document.getElementById('user-coins');
+            const userCoins = parseFloat(userCoinsElement.textContent);
 
             if (!bidAmount || isNaN(bidAmount) || bidAmount <= 0) {
                 showAlert("Please enter a valid bid amount!", "error");
@@ -123,13 +128,15 @@
                 body: `bid_amount=${bidAmount}`
             }).then(response => {
                 if (response.ok) {
-                    showAlert("Bid placed successfully!", "success");
-                    // Update the highest bid in the DOM
-                    highestBidElement.textContent = bidAmount;
-                    // Optionally, update the user's coins in the DOM
-                    userCoinsElement.textContent = `Your Coins: ${userCoins - bidAmount}`;
-                    // Update the user's bid in the DOM
-                    document.querySelector(`#permit-${permitId} td:nth-child(4)`).textContent = bidAmount;
+                    response.json().then(data => {
+                        showAlert("Bid placed successfully!", "success");
+                        // Update the highest bid in the DOM
+                        highestBidElement.textContent = bidAmount;
+                        // Update the user's coins in the DOM
+                        userCoinsElement.textContent = data.updatedCoins;
+                        // Update the user's bid in the DOM
+                        document.querySelector(`#permit-${permitId} td:nth-child(4)`).textContent = bidAmount;
+                    });
                 } else {
                     response.text().then(text => showAlert(text, "error"));
                 }
@@ -157,6 +164,28 @@
             if (urlParams.get("success")) showAlert(urlParams.get("success"), "success");
             history.replaceState(null, "", window.location.pathname);
         });
+
+        function showBidHistory(permitId) {
+            fetch(`/permit/${permitId}/bids`)
+                .then(response => response.json())
+                .then(data => {
+                    const bidHistoryContent = document.getElementById("bidHistoryContent");
+                    bidHistoryContent.innerHTML = data.bids.map(bid => `
+                        <div class="bid">
+                            <p>Bidder: ${bid.bidder.username}</p>
+                            <p>Amount: ${bid.amount}</p>
+                            <p>Time: ${new Date(bid.bidTime).toLocaleString()}</p>
+                        </div>
+                    `).join('');
+                    document.getElementById("bidHistoryModal").style.display = "block";
+                    document.getElementById("overlay").style.display = "block";
+                });
+        }
+
+        function closeBidHistoryModal() {
+            document.getElementById("bidHistoryModal").style.display = "none";
+            document.getElementById("overlay").style.display = "none";
+        }
 
         let currentPermitId = null;
         function openInviteModal(permitId) {
