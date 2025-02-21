@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login Page</title>
+    <title>Login</title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
     <style>
         body {
@@ -47,37 +47,18 @@
 <body>
     <div class="card">
         <h2>Login</h2>
-        <input id="userId" class="input" type="text" placeholder="User ID">
-        <input id="password" class="input" type="password" placeholder="Password">
-        <button class="button" onclick="handleLogin()">Login</button>
-        <p id="error-message" class="error-message"></p>
+        <form action="/login" method="POST">
+            <label for="username">Username:</label>
+            <input id="username" class="input" type="text" name="username" required>
+            <br>
+            <label for="password">Password:</label>
+            <input id="password" class="input" type="password" name="password" required>
+            <br>
+            <button class="button" type="submit">Login</button>
+        </form>
+        <% if (errorMessage) { %>
+            <p id="error-message" class="error-message"><%= errorMessage %></p>
+        <% } %>
     </div>
-
-    <script>
-        async function handleLogin() {
-            const userId = document.getElementById('userId').value;
-            const password = document.getElementById('password').value;
-
-            try {
-                const response = await fetch('/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ userId, password })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    window.location.href = '/';
-                } else {
-                    document.getElementById("error-message").textContent = data.message || "Invalid User ID or Password.";
-                }
-
-            } catch (error) {
-                console.error("Error during login:", error);
-                document.getElementById("error-message").textContent = "An error occurred during login.";
-            }
-        }
-    </script>
 </body>
 </html>

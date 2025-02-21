@@ -1,12 +1,11 @@
-const crypto = require('crypto');
+const bcrypt = require("bcrypt");
 
-function hashPassword(password, salt) {
-  return crypto.createHmac('sha256', salt).update(password).digest('hex');
-}
+const password = "password";
 
-const password = 'password';
-const salt = crypto.randomBytes(16).toString('hex');
-const hashedPassword = hashPassword(password, salt);
-
-console.log('Salt:', salt);
-console.log('Hashed Password:', hashedPassword);
+bcrypt.hash(password, 10, (err, hash) => {
+  if (err) {
+    console.error("Error generating hash:", err);
+  } else {
+    console.log("Generated hash:", hash);
+  }
+});

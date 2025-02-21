@@ -1,5 +1,7 @@
 const bcrypt = require("bcryptjs");
-const { Permit, User } = require("./models");
+const mongoose = require("mongoose");
+const Permit = require("./models/Permit");
+const User = require("./models/User");
 const connectDB = require("./db");
 
 const seedDatabase = async () => {
@@ -19,8 +21,8 @@ const seedDatabase = async () => {
   // Sample Users
   const hashedPassword = await bcrypt.hash("password123", 10);
   const users = [
-    { username: "admin", passwordHash: hashedPassword, coins: 500 },
-    { username: "player1", passwordHash: hashedPassword, coins: 200 }
+    { username: "admin", password: hashedPassword, coins: 100 },
+    { username: "player1", password: hashedPassword, coins: 100 }
   ];
 
   await User.insertMany(users);
