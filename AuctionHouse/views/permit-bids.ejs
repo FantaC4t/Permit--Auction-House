@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Bids for <%= permit.name %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <nav>
+        <div><a href="/">Shop</a></div>
+        <div><a href="/logout">Logout</a></div>
+    </nav>
+
+    <div class="container">
+        <h1>Bids for <%= permit.name %></h1>
+        <table>
+            <thead>
+                <tr>
+                    <th>Bidder</th>
+                    <th>Amount</th>
+                    <th>Time</th>
+                </tr>
+            </thead>
+            <tbody>
+                <% bids.forEach(bid => { %>
+                <tr>
+                    <td><%= bid.bidder.username %></td>
+                    <td><%= bid.amount %></td>
+                    <td><%= bid.bidTime.toLocaleString() %></td>
+                </tr>
+                <% }); %>
+            </tbody>
+        </table>
+        <a href="/">Back to Shop</a>
+    </div>
+</body>
+</html>
