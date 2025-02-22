@@ -4,6 +4,7 @@ import axios from 'axios';
 import io from 'socket.io-client';
 import './PermitShop.css';
 
+// Move socket initialization outside component to prevent recreation
 const socket = io('http://localhost:5000', {
   withCredentials: true,
   transports: ['websocket', 'polling']
@@ -20,11 +21,40 @@ const PermitShop = ({ user: initialUser }) => {
   const [bidHistory, setBidHistory] = useState([]);
   const [showBidHistoryModal, setShowBidHistoryModal] = useState(false);
   const [alert, setAlert] = useState({ show: false, message: '', type: '' });
+  const [storedNotifications, setStoredNotifications] = useState([]);
+  const [showStoredNotificationsModal, setShowStoredNotificationsModal] = useState(false);
 
+  const animateCoins = (isIncrease = false) => {
+    const coinsElement = document.getElementById('user-coins');
+    if (coinsElement) {
+      coinsElement.classList.remove('coins-update');
+      coinsElement.removeAttribute('data-coins-increased');
+      coinsElement.removeAttribute('data-coins-decreased');
+      
+      // Force a reflow
+      void coinsElement.offsetWidth;
+      
+      coinsElement.classList.add('coins-update');
+      coinsElement.setAttribute(
+        isIncrease ? 'data-coins-increased' : 'data-coins-decreased',
+        'true'
+      );
+      
+      setTimeout(() => {
+        if (coinsElement) {
+          coinsElement.classList.remove('coins-update');
+          coinsElement.removeAttribute('data-coins-increased');
+          coinsElement.removeAttribute('data-coins-decreased');
+        }
+      }, 500);
+    }
+  };
+
+  // Separate data fetching effect from socket listener
   useEffect(() => {
-    // Fetch permits, user, invites, and outbid notifications
+    let isMounted = true;
+
     const fetchData = async () => {
-      setIsLoading(true);
       try {
         const [permitsRes, userRes, invitesRes, notificationsRes] = await Promise.all([
           axios.get('http://localhost:5000/permits', { withCredentials: true }),
@@ -33,35 +63,124 @@ const PermitShop = ({ user: initialUser }) => {
           axios.get('http://localhost:5000/outbid-notifications', { withCredentials: true })
         ]);
 
-        setPermits(permitsRes.data);
-        setUser(userRes.data);
-        setInvites(invitesRes.data);
-        setOutbidNotifications(notificationsRes.data);
+        if (isMounted) {
+          setPermits(permitsRes.data);
+          setUser(prevUser => ({
+            ...prevUser,
+            ...userRes.data
+          }));
+          setInvites(invitesRes.data);
+          setOutbidNotifications(notificationsRes.data);
+
+          // Check for stored notifications
+          const storedNotifications = JSON.parse(localStorage.getItem('outbidNotifications') || '[]');
+          if (storedNotifications.length > 0) {
+            // Show modal with stored notifications
+            setStoredNotifications(storedNotifications);
+            setShowStoredNotificationsModal(true);
+            // Clear stored notifications
+            localStorage.removeItem('outbidNotifications');
+          }
+
+          setIsLoading(false);
+        }
       } catch (error) {
         console.error('Error fetching data:', error);
-      } finally {
-        setIsLoading(false);
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchData();
 
-    // Listen for bidPlaced event
-    socket.on('bidPlaced', (data) => {
-      setPermits((prevPermits) =>
-        prevPermits.map((permit) =>
-          permit._id === data.permitId ? { ...permit, highest_bid: data.bidAmount } : permit
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Empty dependency array for initial fetch
+
+  // Separate useEffect for socket events
+  useEffect(() => {
+    const handleBidPlaced = async (data) => {
+      const currentPermit = permits.find(p => p._id === data.permitId);
+      
+      // Check if you were the highest bidder before this new bid
+      const wasHighestBidder = currentPermit && 
+        user.bids && 
+        user.bids[data.permitId] === currentPermit.highest_bid && 
+        data.bidder !== user._id;
+
+      // Update permits with new bid
+      setPermits(prevPermits => 
+        prevPermits.map(p => 
+          p._id === data.permitId ? { ...p, highest_bid: data.bidAmount } : p
         )
       );
-      if (data.user._id === user._id) {
-        setUser((prevUser) => ({ ...prevUser, coins: data.user.coins }));
-      }
-    });
 
-    return () => {
-      socket.off('bidPlaced');
+      // If you placed the bid
+      if (data.bidder === user._id) {
+        try {
+          const userRes = await axios.get('http://localhost:5000/user', { withCredentials: true });
+          setUser(prevUser => {
+            const updatedUser = {
+              ...userRes.data,
+              bids: {
+                ...prevUser.bids,
+                [data.permitId]: data.bidAmount
+              }
+            };
+            requestAnimationFrame(() => animateCoins(false));
+            return updatedUser;
+          });
+          showAlert("Bid placed successfully!", "success");
+        } catch (error) {
+          console.error('Error fetching updated user data:', error);
+        }
+      }
+      // If you were outbid
+      else if (wasHighestBidder) {
+        try {
+          const userRes = await axios.get('http://localhost:5000/user', { withCredentials: true });
+          
+          setOutbidNotifications(prev => [...prev, {
+            permitName: currentPermit.name,
+            bidAmount: data.bidAmount,
+            timestamp: new Date()
+          }]);
+          
+          showAlert(`You were outbid on ${currentPermit.name}!`, "warning");
+
+          setUser(prevUser => {
+            const updatedUser = {
+              ...userRes.data,
+              bids: {
+                ...prevUser.bids,
+                [data.permitId]: currentPermit.highest_bid
+              }
+            };
+            requestAnimationFrame(() => animateCoins(true));
+            return updatedUser;
+          });
+
+          // Store notification for offline access
+          const notification = {
+            permitName: currentPermit.name,
+            bidAmount: data.bidAmount,
+            timestamp: new Date()
+          };
+
+          const storedNotifications = JSON.parse(localStorage.getItem('outbidNotifications') || '[]');
+          localStorage.setItem('outbidNotifications', JSON.stringify([...storedNotifications, notification]));
+
+        } catch (error) {
+          console.error('Error fetching updated user data:', error);
+        }
+      }
     };
-  }, [user._id]);
+
+    socket.on('bidPlaced', handleBidPlaced);
+    return () => socket.off('bidPlaced', handleBidPlaced);
+  }, [user._id, permits, user.bids]);
 
   const showAlert = (message, type) => {
     setAlert({ show: true, message, type });
@@ -69,30 +188,48 @@ const PermitShop = ({ user: initialUser }) => {
   };
 
   const placeBid = async (permitId) => {
-    const amount = bidAmount[permitId];
+    const amount = parseInt(bidAmount[permitId]);
+    const currentPermit = permits.find(p => p._id === permitId);
+
+    // Validate bid amount
     if (!amount || isNaN(amount) || amount <= 0) {
       showAlert("Please enter a valid bid amount!", "error");
       return;
     }
 
+    // Get fresh user data before validating coins
     try {
-      const response = await axios.post(`http://localhost:5000/bid/${permitId}`,
+      const userRes = await axios.get('http://localhost:5000/user', { withCredentials: true });
+      const freshUserData = userRes.data;
+
+      // Validate with fresh coin data
+      if (amount > freshUserData.coins) {
+        showAlert("You don't have enough coins for this bid!", "error");
+        setUser(prev => ({
+          ...prev,
+          coins: freshUserData.coins
+        }));
+        return;
+      }
+
+      // Validate bid is higher than current highest
+      if (currentPermit.highest_bid && amount <= currentPermit.highest_bid) {
+        showAlert("Your bid must be higher than the current highest bid!", "error");
+        return;
+      }
+
+      await axios.post(
+        `http://localhost:5000/bid/${permitId}`,
         { bid_amount: amount },
         { withCredentials: true }
       );
 
-      if (response.data.success) {
-        showAlert("Bid placed successfully!", "success");
-        setUser(prev => ({ ...prev, coins: response.data.updatedCoins }));
-        setPermits(prev => prev.map(p => 
-          p._id === permitId 
-            ? { ...p, highest_bid: response.data.highestBid }
-            : p
-        ));
-        setBidAmount(prev => ({ ...prev, [permitId]: '' }));
-      }
+      // Clear bid input after successful bid
+      setBidAmount(prev => ({ ...prev, [permitId]: '' }));
+
     } catch (error) {
-      showAlert(error.response?.data?.error || "An error occurred while placing the bid.", "error");
+      const errorMessage = error.response?.data?.error || "An error occurred while placing the bid.";
+      showAlert(errorMessage, "error");
     }
   };
 
@@ -156,7 +293,12 @@ const PermitShop = ({ user: initialUser }) => {
         <div className="notifications">
           {outbidNotifications.map((notification, index) => (
             <div key={index} className="notification">
-              You were outbid on {notification.permitName} with a bid of {notification.bidAmount} coins.
+              <div className="notification-content">
+                <span>You were outbid on <strong>{notification.permitName}</strong> with a bid of <strong>{notification.bidAmount}</strong> coins</span>
+                <span className="notification-time">
+                  {new Date(notification.timestamp).toLocaleTimeString()}
+                </span>
+              </div>
             </div>
           ))}
         </div>
@@ -168,7 +310,7 @@ const PermitShop = ({ user: initialUser }) => {
           invites.map(invite => (
             <div key={invite._id} className="invite">
               <div className="invite-message">
-                <strong>{invite.inviter}</strong> invited you to bid on <strong>{invite.permit}</strong>.
+                <strong>{invite.inviter.username}</strong> invited you to bid on <strong>{invite.permit.name}</strong>
               </div>
               <div className="invite-buttons">
                 <button onClick={() => respondInvite(invite._id, 'accept')}>Accept</button>
@@ -256,6 +398,41 @@ const PermitShop = ({ user: initialUser }) => {
             </div>
           </div>
           <div className="overlay" onClick={() => setShowBidHistoryModal(false)} />
+        </>
+      )}
+
+      {showStoredNotificationsModal && (
+        <>
+          <div className="modal">
+            <div className="modal-content">
+              <div className="modal-header">
+                Outbid Notifications While You Were Away
+                <span 
+                  className="modal-close" 
+                  onClick={() => setShowStoredNotificationsModal(false)}
+                >×</span>
+              </div>
+              <div className="stored-notifications-content">
+                {storedNotifications.map((notification, index) => (
+                  <div key={index} className="notification">
+                    <div className="notification-content">
+                      <span>
+                        You were outbid on <strong>{notification.permitName}</strong> 
+                        with a bid of <strong>{notification.bidAmount}</strong> coins
+                      </span>
+                      <span className="notification-time">
+                        {new Date(notification.timestamp).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div 
+            className="overlay" 
+            onClick={() => setShowStoredNotificationsModal(false)} 
+          />
         </>
       )}
     </div>

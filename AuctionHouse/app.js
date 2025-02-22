@@ -136,72 +136,73 @@ app.post("/bid/:id", isAuthenticated, async (req, res) => {
   const bidAmount = parseInt(req.body.bid_amount);
   const user = req.session.user;
 
-  if (!bidAmount || isNaN(bidAmount) || bidAmount <= 0) {
-    return res.status(400).json({ error: "Invalid bid amount" });
-  }
-
-  if (bidAmount > user.coins) {
-    return res.status(400).json({ error: "Not enough coins" });
-  }
-
-  const permit = await Permit.findById(permitId).populate('bids');
-  if (!permit) {
-    return res.status(404).json({ error: "Permit not found" });
-  }
-
-  const existingBids = await Bid.find({ permit: permitId }).sort({ amount: -1 });
-
-  if (existingBids.length > 0) {
-    const highestBid = existingBids[0];
-    if (bidAmount <= highestBid.amount) {
-      return res.status(400).json({ error: "Your new bid must be higher than the current highest bid" });
+  try {
+    const permit = await Permit.findById(permitId);
+    if (!permit) {
+      return res.status(404).json({ error: "Permit not found" });
     }
 
-    // Refund the previous highest bidder
-    const previousHighestBidder = await User.findById(highestBid.bidder);
-    if (previousHighestBidder._id.equals(user._id)) {
-      // If the user is outbidding themselves, refund their previous bid amount
-      user.coins += highestBid.amount;
-    } else {
-      previousHighestBidder.coins += highestBid.amount;
-      await User.findByIdAndUpdate(previousHighestBidder._id, { coins: previousHighestBidder.coins });
-
-      // Store outbid information in the previous highest bidder's session
-      req.sessionStore.get(previousHighestBidder._id.toString(), (err, session) => {
-        if (session) {
-          session.outbidNotifications = session.outbidNotifications || [];
-          session.outbidNotifications.push({
-            permitName: permit.name,
-            bidAmount: highestBid.amount,
-          });
-          req.sessionStore.set(previousHighestBidder._id.toString(), session);
-        }
-      });
+    // Find previous highest bidder to refund their coins
+    if (permit.highest_bid) {
+      const previousBid = await Bid.findOne({ 
+        permit: permitId, 
+        amount: permit.highest_bid 
+      }).populate('bidder');
+      
+      if (previousBid && previousBid.bidder._id.toString() !== user._id.toString()) {
+        // Refund previous bidder
+        const previousBidder = previousBid.bidder;
+        previousBidder.coins += permit.highest_bid;
+        await previousBidder.save();
+        
+        // Emit refund event to previous bidder
+        io.emit('bidRefunded', {
+          userId: previousBidder._id,
+          permitId: permit._id,
+          refundAmount: permit.highest_bid,
+          updatedCoins: previousBidder.coins
+        });
+      }
     }
+
+    // Create and save the new bid
+    const bid = new Bid({
+      permit: permitId,
+      bidder: user._id,
+      amount: bidAmount,
+      bidTime: new Date()
+    });
+    await bid.save();
+
+    // Update permit's highest bid
+    const previousBid = permit.highest_bid;
+    permit.highest_bid = bidAmount;
+    await permit.save();
+
+    // Update bidder's coins
+    const updatedUser = await User.findById(user._id);
+    updatedUser.coins -= bidAmount;
+    await updatedUser.save();
+    req.session.user.coins = updatedUser.coins;
+
+    // Emit bid placed event
+    io.emit('bidPlaced', {
+      permitId: permit._id,
+      bidAmount: bidAmount,
+      bidder: user._id,
+      previousBid: previousBid,
+      updatedCoins: updatedUser.coins
+    });
+
+    res.json({
+      success: true,
+      updatedCoins: updatedUser.coins,
+      highestBid: bidAmount
+    });
+  } catch (error) {
+    console.error('Error placing bid:', error);
+    res.status(500).json({ error: "Error placing bid" });
   }
-
-  permit.highest_bid = bidAmount;
-
-  const bid = new Bid({
-    permit: permitId,
-    bidder: user._id,
-    amount: bidAmount
-  });
-  await bid.save();
-
-  permit.bids.push(bid._id);
-  await permit.save();
-
-  user.coins -= bidAmount;
-  await User.findByIdAndUpdate(user._id, { coins: user.coins });
-
-  req.session.user.bids = { ...req.session.user.bids, [permitId]: bidAmount };
-  req.session.success = "Bid placed successfully!";
-
-  // Emit event to update clients
-  io.emit('bidPlaced', { permitId, bidAmount, user });
-
-  return res.json({ success: "Bid placed successfully!", updatedCoins: user.coins, highestBid: bidAmount });
 });
 
 app.use((req, res, next) => {
@@ -288,15 +289,17 @@ app.get("/user", isAuthenticated, async (req, res) => {
 // Get invites
 app.get("/invites", isAuthenticated, async (req, res) => {
   try {
-    const invites = await Invite.find({ invitee: req.session.user._id });
+    const invites = await Invite.find({ invitee: req.session.user._id })
+      .populate('inviter', 'username')
+      .populate('permit', 'name');
     res.json(invites);
   } catch (error) {
     res.status(500).json({ error: "Error fetching invites" });
   }
 });
 
-// Get outbid notifications
-app.get("/outbid-notifications", isAuthenticated, async (req, res) => {
+// Fix the syntax error in the error handling
+app.get('/outbid-notifications', isAuthenticated, async (req, res) => {
   try {
     const notifications = req.session.outbidNotifications || [];
     delete req.session.outbidNotifications;
