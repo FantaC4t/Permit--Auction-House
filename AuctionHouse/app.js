@@ -7,6 +7,7 @@ const bcrypt = require("bcrypt");
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
+const cors = require('cors');
 
 const User = require("./models/User");
 const Permit = require("./models/Permit");
@@ -14,21 +15,34 @@ const Bid = require("./models/Bid");
 const Invite = require("./models/Invite"); // Import the Invite model
 
 const app = express();
+const server = http.createServer(app);
+
+// 1. Static files
+const buildPath = path.resolve(__dirname, 'auction-house-client', 'build');
+app.use(express.static(buildPath));
+app.use('/static', express.static(path.join(buildPath, 'static')));
+
 app.set("view engine", "ejs");
 app.use(express.static("public"));
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
 
+// 2. Middleware
+app.use(cors({
+  origin: 'http://localhost:3000',
+  credentials: true
+}));
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   session({
     secret: "yourSecretKey",
     resave: false,
     saveUninitialized: true,
+    cookie: {
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
   })
 );
-
-// Serve static files from the React app
-app.use(express.static(path.join(__dirname, 'auction-house-client/build')));
 
 // Connect to MongoDB
 connectDB();
@@ -41,38 +55,55 @@ function isAuthenticated(req, res, next) {
   res.redirect("/login");
 }
 
+// Log all requests
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+  console.log('Session:', req.session);
+  next();
+});
+
+// 3. API routes
 // Render Login Page
 app.get("/login", (req, res) => {
   res.render("login", { errorMessage: null });
 });
 
-// Handle Login
+// Update the login route
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
-  const user = await User.findOne({ username });
+  try {
+    const user = await User.findOne({ username });
 
-  if (user) {
-    const passwordMatch = await bcrypt.compare(password, user.password);
+    if (user) {
+      const passwordMatch = await bcrypt.compare(password, user.password);
 
-    if (passwordMatch) {
-      req.session.user = user; // Store user in session
+      if (passwordMatch) {
+        req.session.user = user;
 
-      // Check for outbid notifications
-      req.sessionStore.get(user._id.toString(), (err, session) => {
-        if (session && session.outbidNotifications) {
-          req.session.outbidNotifications = session.outbidNotifications;
-          delete session.outbidNotifications;
-          req.sessionStore.set(user._id.toString(), session);
-        }
-      });
+        // Fetch and store user bids in session
+        const userBids = await Bid.find({ bidder: user._id });
+        req.session.user.bids = userBids.reduce((acc, bid) => {
+          acc[bid.permit] = bid.amount;
+          return acc;
+        }, {});
 
-      return res.redirect("/"); // Redirect to permit shop
-    } else {
-      return res.render("login", { errorMessage: "Invalid Username or Password." });
+        return res.json({
+          success: true,
+          user: {
+            _id: user._id,
+            username: user.username,
+            coins: user.coins,
+            bids: req.session.user.bids
+          }
+        });
+      }
     }
-  } else {
-    return res.render("login", { errorMessage: "Invalid Username or Password." });
+
+    return res.status(401).json({ success: false, message: "Invalid username or password" });
+  } catch (error) {
+    console.error('Login error:', error);
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 });
 
@@ -232,23 +263,72 @@ app.get("/permit/:id/bids", isAuthenticated, async (req, res) => {
   res.json({ bids });
 });
 
-const server = http.createServer(app);
-const io = socketIo(server);
+// Add these routes after your existing routes
+
+// Get all permits
+app.get("/permits", isAuthenticated, async (req, res) => {
+  try {
+    const permits = await Permit.find();
+    res.json(permits);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching permits" });
+  }
+});
+
+// Get user data
+app.get("/user", isAuthenticated, async (req, res) => {
+  try {
+    const user = await User.findById(req.session.user._id);
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching user data" });
+  }
+});
+
+// Get invites
+app.get("/invites", isAuthenticated, async (req, res) => {
+  try {
+    const invites = await Invite.find({ invitee: req.session.user._id });
+    res.json(invites);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching invites" });
+  }
+});
+
+// Get outbid notifications
+app.get("/outbid-notifications", isAuthenticated, async (req, res) => {
+  try {
+    const notifications = req.session.outbidNotifications || [];
+    delete req.session.outbidNotifications;
+    res.json(notifications);
+  } catch (error) {
+    res.status(500).json({ error: "Error fetching notifications" });
+  }
+});
+
+const io = require('socket.io')(server, {
+  cors: {
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"],
+    credentials: true
+  }
+});
 
 io.on('connection', (socket) => {
-  console.log('New client connected');
+  console.log('Client connected:', socket.id);
 
   socket.on('disconnect', () => {
-    console.log('Client disconnected');
+    console.log('Client disconnected:', socket.id);
   });
 });
 
-// The "catchall" handler: for any request that doesn't match one above, send back React's index.html file.
+// 4. React app catch-all route (must be last)
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'auction-house-client/build', 'index.html'));
+  console.log(`Serving index.html for ${req.originalUrl}`);
+  res.sendFile(path.join(buildPath, 'index.html'));
 });
 
-// Start Server
-server.listen(3000, () => {
-  console.log("Server running on http://localhost:3000");
+// Change the port number at the bottom of the file
+server.listen(5000, () => {
+  console.log("Server running on http://localhost:5000");
 });

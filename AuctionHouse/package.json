@@ -5,7 +5,9 @@
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
-    "seed": "node seed.js"
+    "client": "cd auction-house-client && npm start",
+    "build": "cd auction-house-client && npm run build",
+    "dev": "concurrently \"npm start\" \"npm run client\""
   },
   "dependencies": {
     "bcrypt": "^5.0.1",

@@ -1,11 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './App.css';
+import Login from './components/Login';
 import PermitShop from './components/PermitShop';
 
 const App = () => {
+  const [user, setUser] = useState(null);
+
+  const handleLoginSuccess = (userData) => {
+    setUser(userData);
+  };
+
   return (
     <div className="App">
-      <PermitShop />
+      {!user ? (
+        <Login onLoginSuccess={handleLoginSuccess} />
+      ) : (
+        <PermitShop user={user} />
+      )}
     </div>
   );
 };
