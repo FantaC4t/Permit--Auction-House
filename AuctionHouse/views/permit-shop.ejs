@@ -43,12 +43,12 @@
                 <% invites.forEach(invite => { %>
                     <div class="invite">
                         <div class="invite-message">
-                            <strong><%= invite.inviter_username %></strong> invited you to bid on <strong><%= invite.permit_name %></strong>.
+                            <strong><%= invite.inviter %></strong> invited you to bid on <strong><%= invite.permit %></strong>.
                             You need <strong><%= invite.bid_amount %></strong> coins to join.
                         </div>
                         <div class="invite-buttons">
-                            <button onclick="respondInvite(<%= invite.invite_id %>, 'accept')">Accept</button>
-                            <button onclick="respondInvite(<%= invite.invite_id %>, 'reject')">Reject</button>
+                            <button onclick="respondInvite(<%= invite._id %>, 'accept')">Accept</button>
+                            <button onclick="respondInvite(<%= invite._id %>, 'reject')">Reject</button>
                         </div>
                     </div>
                 <% }); %>
@@ -80,7 +80,7 @@
                         <input type="number" id="bid-<%= permit._id %>" placeholder="Enter bid" required min="0">
                         <button onclick="placeBid('<%= permit._id %>')">Bid</button>
                         <input type="text" id="invite-user-<%= permit._id %>" placeholder="Username">
-                        <button onclick="openInviteModal('<%= permit._id %>')">Invite</button>
+                        <button onclick="sendInvite('<%= permit._id %>')">Invite</button>
                     </td>
                 </tr>
                 <% }); %>
@@ -131,7 +131,7 @@
                     response.json().then(data => {
                         showAlert("Bid placed successfully!", "success");
                         // Update the highest bid in the DOM
-                        highestBidElement.textContent = bidAmount;
+                        highestBidElement.textContent = data.highestBid;
                         // Update the user's coins in the DOM
                         userCoinsElement.textContent = data.updatedCoins;
                         // Update the user's bid in the DOM
@@ -163,6 +163,13 @@
             if (urlParams.get("error")) showAlert(urlParams.get("error"), "error");
             if (urlParams.get("success")) showAlert(urlParams.get("success"), "success");
             history.replaceState(null, "", window.location.pathname);
+
+            // Check for outbid notifications
+            <% if (outbidNotifications && outbidNotifications.length > 0) { %>
+                <% outbidNotifications.forEach(notification => { %>
+                    showAlert(`You were outbid on <%= notification.permitName %> with a bid of <%= notification.bidAmount %> coins.`, "error");
+                <% }); %>
+            <% } %>
         });
 
         function showBidHistory(permitId) {
@@ -200,13 +207,12 @@
             document.getElementById("inviteModal").style.display = "block";
         }
         function closeInviteModal() { document.getElementById("inviteModal").style.display = "none"; }
-        function sendInvite() {
-            const username = document.getElementById(`invite-user-${currentPermitId}`).value;
-            const bidAmount = document.getElementById(`bid-${currentPermitId}`).value;
-            fetch(`/invite`, {
+        function sendInvite(permitId) {
+            const username = document.getElementById(`invite-user-${permitId}`).value;
+            fetch(`/invite/${permitId}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/x-www-form-urlencoded" },
-                body: `permitId=${currentPermitId}&username=${username}&bidAmount=${bidAmount}`
+                body: `invitedUser=${username}`
             }).then(() => { closeInviteModal(); location.reload(); });
         }
     </script>

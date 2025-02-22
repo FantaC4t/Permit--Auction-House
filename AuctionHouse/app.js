@@ -51,6 +51,16 @@ app.post("/login", async (req, res) => {
 
     if (passwordMatch) {
       req.session.user = user; // Store user in session
+
+      // Check for outbid notifications
+      req.sessionStore.get(user._id.toString(), (err, session) => {
+        if (session && session.outbidNotifications) {
+          req.session.outbidNotifications = session.outbidNotifications;
+          delete session.outbidNotifications;
+          req.sessionStore.set(user._id.toString(), session);
+        }
+      });
+
       return res.redirect("/"); // Redirect to permit shop
     } else {
       return res.render("login", { errorMessage: "Invalid Username or Password." });
@@ -71,11 +81,15 @@ app.get("/logout", (req, res) => {
 app.get("/", isAuthenticated, async (req, res) => {
   const permits = await Permit.find();
   const invites = await Invite.find({ invitee: req.session.user._id });
+  const outbidNotifications = req.session.outbidNotifications || [];
+  delete req.session.outbidNotifications; // Clear notifications after fetching
+
   res.render("permit-shop", {
     user: req.session.user,
     permits,
     userBids: req.session.user.bids || {},
     invites,
+    outbidNotifications
   });
 });
 
@@ -98,21 +112,35 @@ app.post("/bid/:id", isAuthenticated, async (req, res) => {
     return res.status(404).json({ error: "Permit not found" });
   }
 
-  const existingBids = await Bid.find({ permit: permitId, bidder: user._id }).sort({ amount: -1 });
+  const existingBids = await Bid.find({ permit: permitId }).sort({ amount: -1 });
 
   if (existingBids.length > 0) {
     const highestBid = existingBids[0];
     if (bidAmount <= highestBid.amount) {
-      return res.status(400).json({ error: "Your new bid must be higher than your previous highest bid" });
+      return res.status(400).json({ error: "Your new bid must be higher than the current highest bid" });
     }
 
-    // Refund the highest bid amount
-    user.coins += highestBid.amount;
-    await User.findByIdAndUpdate(user._id, { coins: user.coins });
-  }
+    // Refund the previous highest bidder
+    const previousHighestBidder = await User.findById(highestBid.bidder);
+    if (previousHighestBidder._id.equals(user._id)) {
+      // If the user is outbidding themselves, refund their previous bid amount
+      user.coins += highestBid.amount;
+    } else {
+      previousHighestBidder.coins += highestBid.amount;
+      await User.findByIdAndUpdate(previousHighestBidder._id, { coins: previousHighestBidder.coins });
 
-  if (bidAmount <= permit.highest_bid) {
-    return res.status(400).json({ error: "Your new bid must be higher than the current highest bid" });
+      // Store outbid information in the previous highest bidder's session
+      req.sessionStore.get(previousHighestBidder._id.toString(), (err, session) => {
+        if (session) {
+          session.outbidNotifications = session.outbidNotifications || [];
+          session.outbidNotifications.push({
+            permitName: permit.name,
+            bidAmount: highestBid.amount,
+          });
+          req.sessionStore.set(previousHighestBidder._id.toString(), session);
+        }
+      });
+    }
   }
 
   permit.highest_bid = bidAmount;
@@ -132,7 +160,7 @@ app.post("/bid/:id", isAuthenticated, async (req, res) => {
 
   req.session.user.bids = { ...req.session.user.bids, [permitId]: bidAmount };
   req.session.success = "Bid placed successfully!";
-  return res.json({ success: "Bid placed successfully!", updatedCoins: user.coins });
+  return res.json({ success: "Bid placed successfully!", updatedCoins: user.coins, highestBid: bidAmount });
 });
 
 app.use((req, res, next) => {
@@ -146,7 +174,7 @@ app.use((req, res, next) => {
 // Handle Sending an Invite with Cost Calculation
 app.post("/invite/:permitId", isAuthenticated, async (req, res) => {
   const permitId = req.params.permitId;
-  const invitedUser = req.body.invitedUser; // Who is being invited
+  const invitedUsername = req.body.invitedUser; // Who is being invited
   const inviter = req.session.user._id; // Who is inviting
 
   const permit = await Permit.findById(permitId);
@@ -154,16 +182,21 @@ app.post("/invite/:permitId", isAuthenticated, async (req, res) => {
     return res.redirect("/?error=Permit%20not%20found");
   }
 
+  const invitedUser = await User.findOne({ username: invitedUsername });
+  if (!invitedUser) {
+    return res.redirect("/?error=User%20not%20found");
+  }
+
   // Store invite correctly
   const invite = new Invite({
     permit: permitId,
     inviter,
-    invitee: invitedUser,
+    invitee: invitedUser._id,
     status: "pending"
   });
   await invite.save();
 
-  return res.redirect("/?success=Invite%20sent%20to%20" + invitedUser);
+  return res.redirect("/?success=Invite%20sent%20to%20" + invitedUsername);
 });
 
 // Accept/Reject Invites
