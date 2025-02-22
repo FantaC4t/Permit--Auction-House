@@ -4,6 +4,9 @@ const session = require("express-session");
 const mongoose = require("mongoose");
 const connectDB = require("./db");
 const bcrypt = require("bcrypt");
+const http = require('http');
+const socketIo = require('socket.io');
+const path = require('path');
 
 const User = require("./models/User");
 const Permit = require("./models/Permit");
@@ -23,6 +26,9 @@ app.use(
     saveUninitialized: true,
   })
 );
+
+// Serve static files from the React app
+app.use(express.static(path.join(__dirname, 'auction-house-client/build')));
 
 // Connect to MongoDB
 connectDB();
@@ -160,6 +166,10 @@ app.post("/bid/:id", isAuthenticated, async (req, res) => {
 
   req.session.user.bids = { ...req.session.user.bids, [permitId]: bidAmount };
   req.session.success = "Bid placed successfully!";
+
+  // Emit event to update clients
+  io.emit('bidPlaced', { permitId, bidAmount, user });
+
   return res.json({ success: "Bid placed successfully!", updatedCoins: user.coins, highestBid: bidAmount });
 });
 
@@ -222,7 +232,23 @@ app.get("/permit/:id/bids", isAuthenticated, async (req, res) => {
   res.json({ bids });
 });
 
+const server = http.createServer(app);
+const io = socketIo(server);
+
+io.on('connection', (socket) => {
+  console.log('New client connected');
+
+  socket.on('disconnect', () => {
+    console.log('Client disconnected');
+  });
+});
+
+// The "catchall" handler: for any request that doesn't match one above, send back React's index.html file.
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'auction-house-client/build', 'index.html'));
+});
+
 // Start Server
-app.listen(3000, () => {
+server.listen(3000, () => {
   console.log("Server running on http://localhost:3000");
 });
