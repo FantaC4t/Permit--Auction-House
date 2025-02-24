@@ -16,30 +16,30 @@ const Login = () => {
     setError(''); // Clear previous errors
 
     try {
-      console.log('Attempting login for:', username); // Debug log
+      const response = await fetch('http://localhost:5000/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include', // Important for sessions
+        body: JSON.stringify({ username, password }),
+      });
 
-      const response = await axios.post(
-        'http://localhost:5000/auth/login',
-        { username, password },
-        { 
-          withCredentials: true,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        }
-      );
+      const data = await response.json();
+      console.log('Server response:', data); // Debug log
 
-      console.log('Login response:', response.data); // Debug log
+      if (!response.ok) {
+        throw new Error(data.error || 'Login failed');
+      }
 
-      if (response.data.success) {
-        setUser(response.data.user);
+      if (data.success) {
+        console.log('Login successful:', data);
+        setUser(data.user);
         navigate('/');
-      } else {
-        setError(response.data.message || 'Login failed');
       }
     } catch (error) {
-      console.error('Login error:', error.response?.data || error);
-      setError(error.response?.data?.message || 'Error logging in');
+      console.error('Login error details:', error);
+      setError(error.message || 'Login failed. Please try again.');
     }
   };
 

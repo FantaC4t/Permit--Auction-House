@@ -5,30 +5,42 @@ const User = require("./models/User");
 const connectDB = require("./db");
 
 const seedDatabase = async () => {
-  await connectDB();
+  try {
+    await connectDB();
+    
+    // Clear existing data
+    await Promise.all([
+      Permit.deleteMany({}),
+      User.deleteMany({})
+    ]);
+    console.log("Cleared existing data");
 
-  // Sample Permits
-  const permits = [
-    { name: "Fireworks Emporium", description: "Fireworks for celebrations." },
-    { name: "Wood Block Depot", description: "All types of wood blocks." },
-    { name: "Redstone Engineer", description: "Redstone components and contraptions." },
-    { name: "Armory", description: "Weapons and armor." }
-  ];
+    // Sample Permits
+    const permits = [
+      { name: "Fireworks Emporium", description: "Fireworks for celebrations." },
+      { name: "Wood Block Depot", description: "All types of wood blocks." },
+      { name: "Redstone Engineer", description: "Redstone components and contraptions." },
+      { name: "Armory", description: "Weapons and armor." }
+    ];
 
-  await Permit.insertMany(permits);
-  console.log("Permits added!");
+    await Permit.insertMany(permits);
+    console.log("Permits added!");
 
-  // Sample Users
-  const hashedPassword = await bcrypt.hash("password123", 10);
-  const users = [
-    { username: "admin", password: hashedPassword, coins: 100 },
-    { username: "player1", password: hashedPassword, coins: 100 }
-  ];
+    // Sample Users
+    const hashedPassword = await bcrypt.hash("password123", 10);
+    const users = [
+      { username: "admin", password: hashedPassword, coins: 100 },
+      { username: "player1", password: hashedPassword, coins: 100 }
+    ];
 
-  await User.insertMany(users);
-  console.log("Users added!");
+    await User.insertMany(users);
+    console.log("Users added!");
 
-  process.exit();
+  } catch (error) {
+    console.error("Error seeding database:", error);
+  } finally {
+    process.exit();
+  }
 };
 
 seedDatabase();
