@@ -1,39 +1,55 @@
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { UserContext } from '../context/UserContext';
 import './Login.css';
 
-const Login = ({ onLoginSuccess }) => {
+const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const { setUser } = useContext(UserContext);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError(''); // Clear previous errors
 
     try {
-      const response = await axios.post('http://localhost:5000/login', {
-        username,
-        password
-      }, {
-        withCredentials: true
-      });
+      console.log('Attempting login for:', username); // Debug log
+
+      const response = await axios.post(
+        'http://localhost:5000/auth/login',
+        { username, password },
+        { 
+          withCredentials: true,
+          headers: {
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+
+      console.log('Login response:', response.data); // Debug log
 
       if (response.data.success) {
-        onLoginSuccess(response.data.user);
+        setUser(response.data.user);
+        navigate('/');
+      } else {
+        setError(response.data.message || 'Login failed');
       }
     } catch (error) {
-      setError(error.response?.data?.message || 'Login failed');
+      console.error('Login error:', error.response?.data || error);
+      setError(error.response?.data?.message || 'Error logging in');
     }
   };
 
   return (
     <div className="login-container">
-      <form onSubmit={handleSubmit} className="login-form">
-        <h2>Login to Permit Auction House</h2>
-        {error && <div className="error-message">{error}</div>}
+      <h2>Login</h2>
+      {error && <div className="error-message">{error}</div>}
+      <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label htmlFor="username">Username</label>
+          <label htmlFor="username">Username:</label>
           <input
             type="text"
             id="username"
@@ -43,7 +59,7 @@ const Login = ({ onLoginSuccess }) => {
           />
         </div>
         <div className="form-group">
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">Password:</label>
           <input
             type="password"
             id="password"
