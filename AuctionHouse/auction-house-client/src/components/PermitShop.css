@@ -56,6 +56,12 @@ nav a:hover {
   animation: slideIn 0.5s ease-out;
 }
 
+.alert.info {
+  background-color: #e3f2fd;
+  border-color: #bbdefb;
+  color: #1976d2;
+}
+
 @keyframes slideIn {
   from {
     transform: translateY(-20px);
@@ -129,17 +135,57 @@ header h2 {
 }
 
 .invite {
-  background-color: #f8f9fa;
+  background-color: #f5f5f5;
+  border-radius: 8px;
   padding: 15px;
-  border-radius: 4px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.invite-message {
+  margin-bottom: 10px;
+}
+
+.invite-details {
+  margin-top: 8px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  gap: 20px;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.contribution, .total-bid {
+  background-color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #ddd;
 }
 
 .invite-actions {
   display: flex;
   gap: 10px;
+}
+
+.invite-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.invite-buttons button {
+  padding: 5px 15px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+.invite-buttons button:first-child {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.invite-buttons button:last-child {
+  background-color: #f44336;
+  color: white;
 }
 
 .invites {
@@ -218,35 +264,43 @@ button:hover {
 
 .modal {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: white;
-  width: 80%;
-  max-width: 500px;
-  max-height: 80vh;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  z-index: 1001;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1001; /* Higher than overlay */
 }
 
 .modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 8px;
+  max-width: 80%;
+  max-height: 80vh;
+  width: 600px;
+  position: relative;
+  overflow-y: auto;
+}
+
+.bid-history-modal {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 80vh;
 }
 
 .modal-header {
-  padding: 16px;
-  border-bottom: 1px solid #eee;
-  font-size: 1.2em;
-  font-weight: bold;
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #eee;
   position: sticky;
   top: 0;
-  background: white;
-  z-index: 1;
+  background-color: white;
+  z-index: 1002; /* Higher than modal */
 }
 
 #bidHistoryContent {
@@ -266,22 +320,23 @@ button:hover {
 
 .modal-close {
   cursor: pointer;
-  font-size: 1.5em;
-  line-height: 1;
+  font-size: 24px;
+  font-weight: bold;
   color: #666;
+  padding: 0 8px;
 }
 
 .modal-close:hover {
-  color: #333;
+  color: #000;
 }
 
 .overlay {
   position: fixed;
   top: 0;
   left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
   z-index: 1000;
 }
 
@@ -319,6 +374,19 @@ button:hover {
   }
 }
 
+@keyframes coinRefund {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+    color: #4CAF50;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* Add these new styles */
 [data-coins-increased="true"] {
   --coin-color: #4CAF50;
@@ -326,6 +394,10 @@ button:hover {
 
 [data-coins-decreased="true"] {
   --coin-color: #f44336;
+}
+
+[data-coins-refunded="true"] {
+  animation: coinRefund 0.5s ease-in-out;
 }
 
 .stored-notifications-content {
@@ -338,4 +410,189 @@ button:hover {
   margin: 8px 0;
   background-color: #fff3cd;
   border: 1px solid #ffeeba;
+}
+
+.invite-modal-content {
+  padding: 20px;
+  position: relative;
+  z-index: 1001; /* Same as modal */
+}
+
+.invite-input-section {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.invite-input-section input {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.invited-users-list {
+  margin: 20px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.invited-user {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin: 5px 0;
+}
+
+.remove-user {
+  background: none;
+  border: none;
+  color: #ff4444;
+  cursor: pointer;
+  font-size: 1.2em;
+  padding: 0 8px;
+}
+
+.invite-actions {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.invite-actions button {
+  padding: 8px 16px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.invite-actions button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.bid-amount-section {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+}
+
+.bid-amount-section label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: bold;
+}
+
+.bid-amount-section input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.bid-summary {
+  background-color: white;
+  padding: 12px;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+.bid-summary p {
+  margin: 8px 0;
+  font-size: 0.9em;
+}
+
+.bid-note {
+  color: #666;
+  font-style: italic;
+  font-size: 0.8em !important;
+}
+
+.team-bid {
+  background-color: #f0f8ff;
+  border: 1px solid #b8daff;
+  border-radius: 4px;
+  padding: 12px;
+  margin: 8px 0;
+}
+
+.team-bid ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.team-bid li {
+  margin: 4px 0;
+}
+
+.bid-history-section h3 {
+  margin: 16px 0 8px;
+  color: #333;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 4px;
+}
+
+.team-bid-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #e8f4ff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin-top: 8px;
+}
+
+.bid-item {
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.bid-item.team-bid {
+  background-color: #f5f5ff;
+  border-left: 3px solid #4a90e2;
+}
+
+.bid-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.team-members {
+  margin-left: 20px;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.team-members ul {
+  margin: 5px 0;
+  padding-left: 20px;
+}
+
+.bid-list {
+  overflow-y: auto;
+  flex-grow: 1;
+  padding: 10px 0;
+}
+
+.bid-item:last-child {
+  border-bottom: none;
+}
+
+.team-size {
+  display: block;
+  font-size: 0.8em;
+  color: #666;
+  margin-top: 2px;
+}
+
+.total-bid {
+  display: flex;
+  flex-direction: column;
 }
