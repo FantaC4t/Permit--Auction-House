@@ -38,6 +38,9 @@ nav a:hover {
     border-radius: 5px;
     font-weight: bold;
     z-index: 1000;
+    padding: 15px 20px;
+    border-radius: 4px;
+    animation: slideIn 0.3s ease;
 }
 
 .alert.success {
@@ -57,9 +60,8 @@ nav a:hover {
 }
 
 .alert.info {
-  background-color: #e3f2fd;
-  border-color: #bbdefb;
-  color: #1976d2;
+  background-color: #2196F3;
+  color: white;
 }
 
 @keyframes slideIn {
@@ -69,6 +71,14 @@ nav a:hover {
   }
   to {
     transform: translateY(0);
+    opacity: 1;
+  }
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
     opacity: 1;
   }
 }
@@ -595,4 +605,41 @@ button:hover {
 .total-bid {
   display: flex;
   flex-direction: column;
+}
+
+/* Coin animations */
+.animate-increase {
+  animation: bounceIncrease 1s ease;
+  color: #4CAF50;
+}
+
+.animate-decrease {
+  animation: bounceDecrease 1s ease;
+  color: #f44336;
+}
+
+@keyframes bounceIncrease {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.2);
+    color: #4CAF50;
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes bounceDecrease {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.8);
+    color: #f44336;
+  }
+  100% {
+    transform: scale(1);
+  }
 }

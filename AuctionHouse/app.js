@@ -1,5 +1,4 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const session = require("express-session");
 const mongoose = require("mongoose");
 const bcrypt = require("bcrypt");
@@ -7,13 +6,19 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const cors = require('cors');
-const authRoutes = require('./routes/auth');
+const MongoStore = require('connect-mongo');
 
 const User = require("./models/User");
 const Permit = require("./models/Permit");
 const Bid = require("./models/Bid");
 const Invite = require("./models/Invite"); // Import the Invite model
 const TeamBid = require("./models/TeamBid");
+
+const authRoutes = require('./routes/auth');
+const permitRoutes = require('./routes/permits');
+const bidRoutes = require('./routes/bids');
+const teamBidRoutes = require('./routes/teamBids');
+const teamRoutes = require('./routes/teams');
 
 const app = express();
 const server = http.createServer(app);
@@ -47,9 +52,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// Add these near the top of your app.js, after creating the app
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// CORS configuration - must be before routes
 app.use(cors({
   origin: 'http://localhost:3000',
   credentials: true,
@@ -57,24 +60,26 @@ app.use(cors({
   allowedHeaders: ['Content-Type']
 }));
 
-// 1. Static files
-const buildPath = path.resolve(__dirname, 'auction-house-client', 'build');
-app.use(express.static(buildPath));
-app.use('/static', express.static(path.join(buildPath, 'static')));
+// Body parser middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.set("view engine", "ejs");
 app.use(express.static("public"));
 
-// 2. Middleware
-app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: true }));
+// Consolidated session configuration
 app.use(
   session({
     secret: "yourSecretKey",
-    resave: false,
+    resave: true,
     saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: 'mongodb://localhost:27017/auctionDB',
+      ttl: 24 * 60 * 60, // 1 day
+      autoRemove: 'native'
+    }),
     cookie: {
-      secure: process.env.NODE_ENV === 'production',
+      secure: false, // Set to true in production with HTTPS
       httpOnly: true,
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       sameSite: 'lax'
@@ -83,21 +88,26 @@ app.use(
 );
 
 // Connect to MongoDB
-const connectDB = async () => {
-  try {
-    await mongoose.connect('mongodb://localhost:27017/auction-house', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-      retryWrites: false // Add this line
-    });
-    console.log('MongoDB connected successfully');
-  } catch (error) {
-    console.error('MongoDB connection error:', error);
-    process.exit(1);
-  }
-};
+mongoose.connect('mongodb://localhost:27017/auctionDB', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+  directConnection: true,
+  retryWrites: false
+}).then(() => {
+  console.log('Connected to MongoDB successfully');
+  // Start server only after successful connection
+  server.listen(5000, () => {
+    console.log("Server running on http://localhost:5000");
+  });
+}).catch((err) => {
+  console.error('MongoDB connection error:', err);
+  process.exit(1); // Exit if MongoDB connection fails
+});
 
-connectDB();
+// Add error handling for MongoDB connection
+mongoose.connection.on('error', (err) => {
+  console.error('MongoDB connection error:', err);
+});
 
 // Middleware to check if user is logged in
 function isAuthenticated(req, res, next) {
@@ -114,10 +124,12 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use('/auth', authRoutes);
-
-const permitRoutes = require('./routes/permits');
-app.use('/permits', permitRoutes);
+// Mount all API routes before static files and catch-all route
+app.use('/api/auth', authRoutes);
+app.use('/api/permits', permitRoutes);
+app.use('/api/bids', bidRoutes);
+app.use('/api/team-bids', teamBidRoutes);
+app.use('/api/teams', teamRoutes);
 
 // Permit Shop Route (Protected)
 app.get("/", isAuthenticated, async (req, res) => {
@@ -146,7 +158,7 @@ app.use((req, res, next) => {
 // Add these routes after your existing routes
 
 // Get user data
-app.get("/user", isAuthenticated, async (req, res) => {
+app.get("/api/user", isAuthenticated, async (req, res) => {
   try {
     const user = await User.findById(req.session.user._id);
     res.json(user);
@@ -156,7 +168,7 @@ app.get("/user", isAuthenticated, async (req, res) => {
 });
 
 // Get invites
-app.get("/invites", isAuthenticated, async (req, res) => {
+app.get("/api/invites", isAuthenticated, async (req, res) => {
   try {
     const invites = await Invite.find({ invitee: req.session.user._id })
       .populate('inviter', 'username')
@@ -168,7 +180,7 @@ app.get("/invites", isAuthenticated, async (req, res) => {
 });
 
 // Fix the syntax error in the error handling
-app.get('/outbid-notifications', isAuthenticated, async (req, res) => {
+app.get('/api/outbid-notifications', isAuthenticated, async (req, res) => {
   try {
     const notifications = req.session.outbidNotifications || [];
     delete req.session.outbidNotifications;
@@ -178,7 +190,7 @@ app.get('/outbid-notifications', isAuthenticated, async (req, res) => {
   }
 });
 
-app.get('/check-user/:username', isAuthenticated, async (req, res) => {
+app.get('/api/check-user/:username', isAuthenticated, async (req, res) => {
   try {
     const username = req.params.username;
     const user = await User.findOne({ username: username });
@@ -195,7 +207,7 @@ app.get('/check-user/:username', isAuthenticated, async (req, res) => {
   }
 });
 
-app.get('/invite/:teamId/status', isAuthenticated, async (req, res) => {
+app.get('/api/invite/:teamId/status', isAuthenticated, async (req, res) => {
   try {
     const { teamId } = req.params;
     const invites = await Invite.find({ teamId }).populate('invitee');
@@ -210,19 +222,25 @@ app.get('/invite/:teamId/status', isAuthenticated, async (req, res) => {
   }
 });
 
-const teamBidRoutes = require('./routes/teamBids');
-app.use('/team-bids', teamBidRoutes);
+// Move static file serving after API routes
+const buildPath = path.resolve(__dirname, 'auction-house-client', 'build');
+app.use(express.static(buildPath));
+app.use('/static', express.static(path.join(buildPath, 'static')));
 
-const teamRoutes = require('./routes/teams');
-app.use('/teams', teamRoutes);
-
-// 4. React app catch-all route (must be last)
+// 6. Catch-all route for React app - Must be last
 app.get('*', (req, res) => {
   console.log(`Serving index.html for ${req.originalUrl}`);
   res.sendFile(path.join(buildPath, 'index.html'));
 });
 
-// Change the port number at the bottom of the file
-server.listen(5000, () => {
-  console.log("Server running on http://localhost:5000");
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  res.status(500).json({ error: 'Something went wrong!' });
+});
+
+// Debug middleware to log all requests
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.path}`, req.body);
+  next();
 });
